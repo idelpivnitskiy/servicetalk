@@ -265,7 +265,8 @@ final class NettyHttpServer {
                                     newTransportRequest(meta.method(), meta.requestTarget(), meta.version(),
                                             meta.headers(), executionContext().bufferAllocator(), payload,
                                             headersFactory)));
-            toSource(handleRequestAndWriteResponse(requestSingle, handleMultipleRequests))
+            final Completable requestResponse = handleRequestAndWriteResponse(requestSingle);
+            toSource(handleMultipleRequests ? requestResponse.repeat(__ -> true).ignoreElements() : requestResponse)
                     .subscribe(new ErrorLoggingHttpSubscriber());
         }
 
@@ -279,8 +280,7 @@ final class NettyHttpServer {
             return connection.defaultFlushStrategy();
         }
 
-        private Completable handleRequestAndWriteResponse(final Single<StreamingHttpRequest> requestSingle,
-                                                          final boolean handleMultipleRequests) {
+        private Completable handleRequestAndWriteResponse(final Single<StreamingHttpRequest> requestSingle) {
             final Publisher<Object> responseObjectPublisher = requestSingle.flatMapPublisher(rawRequest -> {
                 // We transform the request and delay the completion of the result flattened stream to avoid
                 // resubscribing to the NettyChannelPublisher before the previous subscriber has terminated. Otherwise
@@ -355,8 +355,7 @@ final class NettyHttpServer {
 
                 return responsePublisher.concat(requestCompletion);
             });
-            return connection.write(handleMultipleRequests ? responseObjectPublisher.repeat(val -> true) :
-                    responseObjectPublisher);
+            return connection.write(responseObjectPublisher);
         }
 
         @Nonnull
