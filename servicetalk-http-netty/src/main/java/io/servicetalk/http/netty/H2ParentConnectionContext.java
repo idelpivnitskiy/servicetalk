@@ -39,8 +39,11 @@ import io.servicetalk.transport.netty.internal.StacklessClosedChannelException;
 import io.servicetalk.transport.netty.internal.WireLoggingInitializer;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelConfig;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.socket.ChannelInputShutdownReadComplete;
+import io.netty.channel.socket.DuplexChannel;
 import io.netty.handler.codec.http2.Http2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2PingFrame;
 import io.netty.handler.codec.http2.Http2SettingsAckFrame;
@@ -52,6 +55,7 @@ import java.net.SocketOption;
 import javax.annotation.Nullable;
 import javax.net.ssl.SSLSession;
 
+import static io.netty.channel.ChannelOption.ALLOW_HALF_CLOSURE;
 import static io.netty.util.ReferenceCountUtil.release;
 import static io.servicetalk.concurrent.api.Processors.newCompletableProcessor;
 import static io.servicetalk.concurrent.api.Processors.newSingleProcessor;
@@ -62,6 +66,7 @@ import static io.servicetalk.transport.netty.internal.ChannelCloseUtils.assignCo
 import static io.servicetalk.transport.netty.internal.NettyIoExecutors.fromNettyEventLoop;
 import static io.servicetalk.transport.netty.internal.NettyPipelineSslUtils.extractSslSessionAndReport;
 import static io.servicetalk.transport.netty.internal.SocketOptionUtils.getOption;
+import static java.lang.Boolean.TRUE;
 
 class H2ParentConnectionContext extends NettyChannelListenableAsyncCloseable implements NettyConnectionContext,
                                                                                         HttpConnectionContext {
@@ -87,6 +92,17 @@ class H2ParentConnectionContext extends NettyChannelListenableAsyncCloseable imp
         this.keepAliveManager = keepAliveManager;
         // Just in case the channel abruptly closes, we should complete the onClosing Completable.
         onClose().subscribe(onClosing::onComplete);
+        enableHalfClosure(channel);
+    }
+
+    private static void enableHalfClosure(final Channel channel) {
+        assert channel.eventLoop().inEventLoop() : "Channel configuration updated outside of the EventLoop";
+        assert channel instanceof DuplexChannel : "Channel does not implement DuplexChannel";
+        final ChannelConfig config = channel.config();
+        config.setOption(ALLOW_HALF_CLOSURE, TRUE);
+        config.setAutoClose(false);
+        assert TRUE.equals(channel.config().getOption(ALLOW_HALF_CLOSURE)) :
+                "Half-Closure DISABLED, this may impact graceful closure";
     }
 
     @Override
@@ -242,6 +258,10 @@ class H2ParentConnectionContext extends NettyChannelListenableAsyncCloseable imp
                             (SslHandshakeCompletionEvent) evt, this::tryFailSubscriber,
                             observer != NoopConnectionObserver.INSTANCE);
                     tryCompleteSubscriber();
+                } else if (evt == ChannelInputShutdownReadComplete.INSTANCE) {
+                    if (!parentContext.keepAliveManager.inputShutdown()) {
+                        doChannelClosed("userEventTriggered(ChannelInputShutdownReadComplete)");
+                    }
                 }
             } finally {
                 release(evt);

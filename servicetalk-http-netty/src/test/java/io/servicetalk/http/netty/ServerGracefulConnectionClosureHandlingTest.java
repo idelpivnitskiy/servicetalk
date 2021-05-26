@@ -106,12 +106,12 @@ class ServerGracefulConnectionClosureHandlingTest {
              OutputStream out = clientSocket.getOutputStream();
              InputStream in = clientSocket.getInputStream()) {
 
-            out.write(newRequestAsBytes("/first"));
+            out.write(newRequestAsBytes("/first_succeeds"));
             out.flush();
 
             serverConnectionClosing.await();
 
-            out.write(newRequestAsBytes("/second"));
+            out.write(newRequestAsBytes("/second_discarded"));
             out.flush();
 
             int total = 0;
@@ -124,7 +124,7 @@ class ServerGracefulConnectionClosureHandlingTest {
         awaitServerConnectionClosed();
     }
 
-    private byte[] newRequestAsBytes(String path) {
+    private static byte[] newRequestAsBytes(String path) {
         return ("POST " + path + " HTTP/1.1\r\n" +
                 "host: localhost\r\n" +
                 "content-type: text/plain\r\n" +

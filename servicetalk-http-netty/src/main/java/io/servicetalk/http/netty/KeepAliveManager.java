@@ -18,11 +18,15 @@ package io.servicetalk.http.netty;
 import io.servicetalk.http.netty.H2ProtocolConfig.KeepAlivePolicy;
 
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoop;
+import io.netty.channel.socket.DuplexChannel;
 import io.netty.handler.codec.http2.DefaultHttp2GoAwayFrame;
 import io.netty.handler.codec.http2.DefaultHttp2PingFrame;
 import io.netty.handler.codec.http2.Http2PingFrame;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.concurrent.Future;
@@ -71,6 +75,7 @@ final class KeepAliveManager {
      *     <li>{@link #GRACEFUL_CLOSE_START} if graceful close process has been initiated.</li>
      *     <li>{@link Future} instance to timeout ack of PING sent to measure RTT.</li>
      *     <li>{@link #GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT} if we have sent the second go away frame.</li>
+     *     <li>{@link #GRACEFUL_CLOSE_SHUTDOWN_OUTPUT} if the output side of {@link DuplexChannel} is shutdown.</li>
      *     <li>{@link #CLOSED} if the channel is closed.</li>
      * </ul>
      */
@@ -118,13 +123,13 @@ final class KeepAliveManager {
                         if (keepAliveState != null) {
                             keepAliveState = KEEP_ALIVE_ACK_TIMEDOUT;
                             LOGGER.debug(
-                                    "channel={}, timeout {}ns waiting for keep-alive PING(ACK), writing go_away.",
+                                    "channel={}, timeout {}ns waiting for keep-alive PING(ACK), writing GO_AWAY.",
                                     this.channel, pingAckTimeoutNanos);
                             channel.writeAndFlush(new DefaultHttp2GoAwayFrame(NO_ERROR))
                                     .addListener(f -> {
                                         if (f.isSuccess()) {
                                             LOGGER.debug("Closing channel={}, after keep-alive timeout.", this.channel);
-                                            KeepAliveManager.this.close0();
+                                            KeepAliveManager.this.close0(true);
                                         }
                                     });
                         }
@@ -292,7 +297,7 @@ final class KeepAliveManager {
             LOGGER.debug("GO_AWAY written, activeChildChannels={}, gracefulCloseState={}",
                     activeChildChannels, gracefulCloseState);
             if (activeChildChannels == 0) {
-                close0();
+                shutdownOutput();
             }
         });
     }
@@ -304,14 +309,78 @@ final class KeepAliveManager {
         if (gracefulCloseState == CLOSED && keepAliveState == CLOSED) {
             return;
         }
+        if (!attemptFlush) {
+            cancelIfStateIsAFuture(keepAliveState);
+        } else {
+            assert gracefulCloseState == GRACEFUL_CLOSE_SHUTDOWN_OUTPUT;
+        }
         gracefulCloseState = CLOSED;
         keepAliveState = CLOSED;
 
-        // The way netty H2 stream state machine works, we may trigger stream closures during writes with flushes
-        // pending behind the writes. In such cases, we may close too early ignoring the writes. Hence we flush before
-        // closure, if there is no write pending then flush is a noop.
-        channel.flush();
+        if (attemptFlush) {
+            // The way netty H2 stream state machine works, we may trigger stream closures during writes with flushes
+            // pending behind the writes. In such cases, we may close too early ignoring the writes. Hence we flush
+            // before closure, if there is no write pending then flush is a noop.
+            channel.flush();
+        }
         channel.close();
+    }
+
+    private void shutdownOutput() {
+        assert channel.eventLoop().inEventLoop();
+        if (gracefulCloseState == CLOSED || gracefulCloseState == GRACEFUL_CLOSE_SHUTDOWN_OUTPUT) {
+            return;
+        }
+        assert gracefulCloseState == GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT;
+        gracefulCloseState = GRACEFUL_CLOSE_SHUTDOWN_OUTPUT;
+
+        SslHandler sslHandler = channel.pipeline().get(SslHandler.class);
+        if (sslHandler != null) {
+            // send close_notify before FIN: https://tools.ietf.org/html/rfc5246#section-7.2.1
+            sslHandler.closeOutbound().addListener(f -> shutdownOutput0());
+        } else {
+            shutdownOutput0();
+        }
+    }
+
+    private void shutdownOutput0() {
+        final ChannelFuture cf = ((DuplexChannel) channel).shutdownOutput();
+        cf.addListener((ChannelFutureListener) f -> {
+            DuplexChannel dplxChannel = (DuplexChannel) f.channel();
+            if (dplxChannel.isInputShutdown() && dplxChannel.isOutputShutdown()) {
+                LOGGER.debug("{} Fully closing HTTP/2 channel, both input and output shutdown", dplxChannel);
+                close0(false);
+            }
+        });
+    }
+
+    /**
+     * Returns {@code true} when input shutdown was expected, {@code false} otherwise.
+     */
+    boolean inputShutdown() {
+        assert channel.eventLoop().inEventLoop();
+
+        if (gracefulCloseState == null) {
+            // FIN is not expected if we are not in process of graceful closure
+            return false;
+        }
+
+        if (gracefulCloseState == CLOSED) {
+            // Already closed, noop
+        } else if (gracefulCloseState == GRACEFUL_CLOSE_SHUTDOWN_OUTPUT) {
+            close0(false);
+        } else if (gracefulCloseState == GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT) {
+            // Received FIN while some streams are still active. Channel will be closed when activeChildChannels == 0
+        } else if (gracefulCloseState == GRACEFUL_CLOSE_START) {
+            // Graceful closure was initiated and we sent the first GO_AWAY frame. No more frames will be received after
+            // FIN => no need to wait for PING(ack) => complete graceful closure right away
+            gracefulCloseWriteSecondGoAway();
+        } else {
+            // PING(ack) won't be received after FIN, cancel future and complete graceful closure right away
+            cancelIfStateIsAFuture(gracefulCloseState);
+            gracefulCloseWriteSecondGoAway();
+        }
+        return true;
     }
 
     private void cancelIfStateIsAFuture(@Nullable final Object state) {

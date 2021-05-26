@@ -224,11 +224,11 @@ final class H2ServerParentConnectionContext extends H2ParentConnectionContext im
         @Override
         void tryFailSubscriber(Throwable cause) {
             if (subscriber != null) {
-                ChannelCloseUtils.close(parentContext.nettyChannel(), cause);
                 Subscriber<? super H2ServerParentConnectionContext> subscriberCopy = subscriber;
                 subscriber = null;
                 subscriberCopy.onError(cause);
             }
+            ChannelCloseUtils.close(parentContext.nettyChannel(), cause);
         }
 
         @Override

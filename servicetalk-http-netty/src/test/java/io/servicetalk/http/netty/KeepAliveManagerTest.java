@@ -25,6 +25,7 @@ import io.netty.handler.codec.http2.Http2GoAwayFrame;
 import io.netty.handler.codec.http2.Http2PingFrame;
 import io.netty.util.concurrent.Promise;
 import org.hamcrest.Matcher;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.concurrent.BlockingQueue;
@@ -53,6 +54,11 @@ class KeepAliveManagerTest {
     KeepAliveManagerTest() {
         scheduledTasks = new LinkedBlockingQueue<>();
         channel = new EmbeddedChannel();
+    }
+
+    @AfterEach
+    public void tearDown() throws Exception {
+        channel.close().sync().await();
     }
 
     @Test
