@@ -47,13 +47,14 @@ final class KeepAliveManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(KeepAliveManager.class);
     private static final AtomicIntegerFieldUpdater<KeepAliveManager> activeChildChannelsUpdater =
             AtomicIntegerFieldUpdater.newUpdater(KeepAliveManager.class, "activeChildChannels");
-    private static final long GRACEFUL_CLOSE_PING_CONTENT = ThreadLocalRandom.current().nextLong();
-    private static final long KEEP_ALIVE_PING_CONTENT = ThreadLocalRandom.current().nextLong();
-    private static final Object CLOSED = new Object();
-    private static final Object GRACEFUL_CLOSE_START = new Object();
-    private static final Object GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT = new Object();
-    private static final Object KEEP_ALIVE_ACK_PENDING = new Object();
-    private static final Object KEEP_ALIVE_ACK_TIMEDOUT = new Object();
+    private final long GRACEFUL_CLOSE_PING_CONTENT = ThreadLocalRandom.current().nextLong();
+    private final long KEEP_ALIVE_PING_CONTENT = ThreadLocalRandom.current().nextLong();
+    private static final Object CLOSED = "CLOSED";
+    private static final Object GRACEFUL_CLOSE_START = "GRACEFUL_CLOSE_START";
+    private static final Object GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT = "GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT";
+    private static final Object GRACEFUL_CLOSE_SHUTDOWN_OUTPUT = "GRACEFUL_CLOSE_SHUTDOWN_OUTPUT";
+    private static final Object KEEP_ALIVE_ACK_PENDING = "KEEP_ALIVE_ACK_PENDING";
+    private static final Object KEEP_ALIVE_ACK_TIMEDOUT = "KEEP_ALIVE_ACK_TIMEDOUT";
 
     private volatile int activeChildChannels;
 
@@ -140,6 +141,8 @@ final class KeepAliveManager {
     }
 
     void pingReceived(final Http2PingFrame pingFrame) {
+        LOGGER.debug("pingReceived, ack={}, gracefulCloseState={}, keepAliveState={}",
+                pingFrame.ack(), gracefulCloseState, keepAliveState);
         assert channel.eventLoop().inEventLoop();
 
         if (pingFrame.ack()) {
@@ -163,7 +166,8 @@ final class KeepAliveManager {
         streamChannel.closeFuture().addListener(f -> {
             if (activeChildChannelsUpdater.decrementAndGet(this) == 0 &&
                     gracefulCloseState == GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT) {
-                close0();
+                LOGGER.debug("stream_closed: {}", streamChannel);
+                shutdownOutput();
             }
         });
     }
@@ -234,6 +238,7 @@ final class KeepAliveManager {
 
     private void doCloseAsyncGracefully0(final Runnable whenInitiated) {
         assert channel.eventLoop().inEventLoop();
+        LOGGER.debug("doCloseAsyncGracefully0, gracefulCloseState={}", gracefulCloseState);
 
         if (gracefulCloseState != null) {
             // either we are already closed or have already initiated graceful closure.
@@ -258,6 +263,8 @@ final class KeepAliveManager {
         channel.writeAndFlush(new DefaultHttp2PingFrame(GRACEFUL_CLOSE_PING_CONTENT)).addListener(future -> {
             // If gracefulCloseState is not GRACEFUL_CLOSE_START that means we have already received the PING(ACK) and
             // there is no need to apply the timeout.
+            LOGGER.debug("GO_AWAY written, activeChildChannels={}, gracefulCloseState={}",
+                    activeChildChannels, gracefulCloseState);
             if (future.isSuccess() && gracefulCloseState == GRACEFUL_CLOSE_START) {
                 gracefulCloseState = scheduler.afterDuration(() -> {
                     // If the PING(ACK) times out we may have under estimated the 2RTT time so we
@@ -272,6 +279,7 @@ final class KeepAliveManager {
     }
 
     private void gracefulCloseWriteSecondGoAway() {
+        LOGGER.debug("gracefulCloseWriteSecondGoAway, gracefulCloseState={}", gracefulCloseState);
         assert channel.eventLoop().inEventLoop();
 
         if (gracefulCloseState == GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT) {
@@ -281,13 +289,16 @@ final class KeepAliveManager {
         gracefulCloseState = GRACEFUL_CLOSE_SECOND_GO_AWAY_SENT;
 
         channel.writeAndFlush(new DefaultHttp2GoAwayFrame(NO_ERROR)).addListener(future -> {
+            LOGGER.debug("GO_AWAY written, activeChildChannels={}, gracefulCloseState={}",
+                    activeChildChannels, gracefulCloseState);
             if (activeChildChannels == 0) {
                 close0();
             }
         });
     }
 
-    private void close0() {
+    private void close0(final boolean attemptFlush) {
+        LOGGER.debug("close0, gracefulCloseState={}, keepAliveState={}", gracefulCloseState, keepAliveState);
         assert channel.eventLoop().inEventLoop();
 
         if (gracefulCloseState == CLOSED && keepAliveState == CLOSED) {

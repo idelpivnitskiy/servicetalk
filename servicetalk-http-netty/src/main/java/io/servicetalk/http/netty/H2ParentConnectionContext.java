@@ -28,6 +28,7 @@ import io.servicetalk.http.api.HttpConnectionContext;
 import io.servicetalk.http.api.HttpExecutionContext;
 import io.servicetalk.http.api.HttpExecutionStrategy;
 import io.servicetalk.http.api.HttpProtocolVersion;
+import io.servicetalk.logging.api.LogLevel;
 import io.servicetalk.transport.api.ConnectionObserver;
 import io.servicetalk.transport.netty.internal.FlushStrategy;
 import io.servicetalk.transport.netty.internal.FlushStrategyHolder;
@@ -35,6 +36,7 @@ import io.servicetalk.transport.netty.internal.NettyChannelListenableAsyncClosea
 import io.servicetalk.transport.netty.internal.NettyConnectionContext;
 import io.servicetalk.transport.netty.internal.NoopTransportObserver.NoopConnectionObserver;
 import io.servicetalk.transport.netty.internal.StacklessClosedChannelException;
+import io.servicetalk.transport.netty.internal.WireLoggingInitializer;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -159,6 +161,8 @@ class H2ParentConnectionContext extends NettyChannelListenableAsyncCloseable imp
     }
 
     abstract static class AbstractH2ParentConnection extends ChannelInboundHandlerAdapter {
+        static final WireLoggingInitializer STREAM_WIRE_LOGGING_INITIALIZER = new WireLoggingInitializer("stream-events", LogLevel.TRACE, () -> false);
+
         final H2ParentConnectionContext parentContext;
         final boolean waitForSslHandshake;
         private final DelayedCancellable delayedCancellable;

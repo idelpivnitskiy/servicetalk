@@ -26,7 +26,7 @@ import static io.servicetalk.logging.api.LogLevel.TRACE;
 
 enum HttpProtocol {
     HTTP_1(h1Default(), HTTP_1_1),
-    HTTP_2(h2().enableFrameLogging("servicetalk-tests-h2-frame-logger", TRACE, () -> true).build(), HTTP_2_0);
+    HTTP_2(h2().enableFrameLogging("servicetalk-tests-h2-frame-logger", TRACE, () -> false).build(), HTTP_2_0);
 
     final HttpProtocolConfig config;
     final HttpProtocolVersion version;

@@ -21,15 +21,16 @@
     <Property name="h2FrameLogLevel">${sys:servicetalk.logger.h2FrameLogLevel:-OFF}</Property>
   </Properties>
   <Appenders>
-    <Console name="Console" target="SYSTEM_OUT">
+    <Console name="Console" target="SYSTEM_OUT" immediateFlush="false">
       <PatternLayout pattern="%d %30t [%-5level] %-30logger{1} - %msg%n"/>
     </Console>
   </Appenders>
   <Loggers>
-    <Logger name="servicetalk-tests-wire-logger" level="${wireLogLevel}"/>
-    <Logger name="servicetalk-tests-h2-frame-logger" level="${h2FrameLogLevel}"/>
-    <Root level="${rootLevel}">
+<!--    <AsyncLogger name="stream-events" level="${wireLogLevel}"/>-->
+    <AsyncLogger name="servicetalk-tests-wire-logger" level="${wireLogLevel}"/>
+    <AsyncLogger name="servicetalk-tests-h2-frame-logger" level="${h2FrameLogLevel}"/>
+    <AsyncRoot level="${rootLevel}">
       <AppenderRef ref="Console"/>
-    </Root>
+    </AsyncRoot>
   </Loggers>
 </Configuration>

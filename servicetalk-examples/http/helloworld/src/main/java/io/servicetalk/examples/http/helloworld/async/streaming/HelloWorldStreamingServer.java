@@ -16,15 +16,26 @@
 package io.servicetalk.examples.http.helloworld.async.streaming;
 
 import io.servicetalk.http.netty.HttpServers;
+import io.servicetalk.logging.api.LogLevel;
+import io.servicetalk.test.resources.DefaultTestCerts;
+import io.servicetalk.transport.api.ServerSslConfigBuilder;
+import io.servicetalk.transport.api.SslProvider;
 
 import static io.servicetalk.concurrent.api.Publisher.from;
 import static io.servicetalk.concurrent.api.Single.succeeded;
 import static io.servicetalk.http.api.HttpSerializationProviders.textSerializer;
+import static io.servicetalk.http.netty.HttpProtocolConfigs.h2;
 
 public final class HelloWorldStreamingServer {
 
     public static void main(String[] args) throws Exception {
         HttpServers.forPort(8080)
+                .sslConfig(new ServerSslConfigBuilder(DefaultTestCerts::loadServerPem,
+                        DefaultTestCerts::loadServerKey)
+                        .provider(SslProvider.JDK)
+                        .build())
+                .enableWireLogging("wire", LogLevel.DEBUG, () -> true)
+                .protocols(h2().enableFrameLogging("frame", LogLevel.DEBUG, () -> true).build())
                 .listenStreamingAndAwait((ctx, request, responseFactory) ->
                         succeeded(responseFactory.ok()
                                 .payloadBody(from("Hello", " World!"), textSerializer())))

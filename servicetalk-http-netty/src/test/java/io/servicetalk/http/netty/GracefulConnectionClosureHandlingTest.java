@@ -152,9 +152,10 @@ class GracefulConnectionClosureHandlingTest {
                 forAddress(newSocketAddress()) :
                 forAddress(localAddress(0)))
                 .protocols(protocol.config)
+                // .protocols(h2Default())
                 .ioExecutor(SERVER_CTX.ioExecutor())
                 .executionStrategy(defaultStrategy(SERVER_CTX.executor()))
-                .enableWireLogging("servicetalk-tests-wire-logger", TRACE, () -> true)
+                .enableWireLogging("servicetalk-tests-wire-logger", TRACE, () -> false)
                 .appendConnectionAcceptorFilter(original -> new DelegatingConnectionAcceptor(original) {
                     @Override
                     public Completable accept(final ConnectionContext context) {

@@ -344,6 +344,8 @@ final class H2ClientParentConnectionContext extends H2ParentConnectionContext {
                     }
                     parentContext.trackActiveStream(streamChannel);
 
+                    // STREAM_WIRE_LOGGING_INITIALIZER.init(streamChannel);
+
                     final CloseHandler closeHandler = forNonPipelined(true, streamChannel.config());
                     streamChannel.pipeline().addLast(new H2ToStH1ClientDuplexHandler(waitForSslHandshake,
                             parentContext.executionContext().bufferAllocator(), headersFactory,
