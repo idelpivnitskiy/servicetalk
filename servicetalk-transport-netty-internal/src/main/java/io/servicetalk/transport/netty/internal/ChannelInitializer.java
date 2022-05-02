@@ -17,6 +17,8 @@ package io.servicetalk.transport.netty.internal;
 
 import io.netty.channel.AdaptiveRecvByteBufAllocator;
 import io.netty.channel.Channel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
 
 /**
  * Configures a {@link Channel}.
@@ -53,9 +55,14 @@ public interface ChannelInitializer {
      * @return Default initializer for ServiceTalk.
      */
     static ChannelInitializer defaultInitializer() {
-        return channel -> channel.config().setRecvByteBufAllocator(
-                new AdaptiveRecvByteBufAllocator(512, 32768, 65536)
-                        .respectMaybeMoreData(false)
-                        .maxMessagesPerRead(4));
+        return channel -> {
+            // Temporarily add some extra logging after SslHandler to make sure the H2 preface is not flushed by some
+            // other handler in the pipeline:
+            channel.pipeline().addFirst(new LoggingHandler(LogLevel.WARN));
+            channel.config().setRecvByteBufAllocator(
+                    new AdaptiveRecvByteBufAllocator(512, 32768, 65536)
+                            .respectMaybeMoreData(false)
+                            .maxMessagesPerRead(4));
+        };
     }
 }

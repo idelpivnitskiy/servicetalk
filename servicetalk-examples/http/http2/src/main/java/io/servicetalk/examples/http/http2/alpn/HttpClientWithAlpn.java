@@ -18,12 +18,13 @@ package io.servicetalk.examples.http.http2.alpn;
 import io.servicetalk.http.api.BlockingHttpClient;
 import io.servicetalk.http.api.HttpResponse;
 import io.servicetalk.http.netty.HttpClients;
+import io.servicetalk.logging.api.LogLevel;
 import io.servicetalk.test.resources.DefaultTestCerts;
 import io.servicetalk.transport.api.ClientSslConfigBuilder;
 
 import static io.servicetalk.http.api.HttpSerializers.textSerializerUtf8;
 import static io.servicetalk.http.netty.HttpProtocolConfigs.h1Default;
-import static io.servicetalk.http.netty.HttpProtocolConfigs.h2Default;
+import static io.servicetalk.http.netty.HttpProtocolConfigs.h2;
 
 /**
  * A client that negotiates <a href="https://tools.ietf.org/html/rfc7540#section-3.3">HTTP/2</a> or
@@ -36,7 +37,8 @@ public final class HttpClientWithAlpn {
         // Note: this example demonstrates only blocking-aggregated programming paradigm, for asynchronous and
         // streaming API see helloworld examples.
         try (BlockingHttpClient client = HttpClients.forSingleAddress("localhost", 8080)
-                .protocols(h2Default(), h1Default()) // Configure support for HTTP/2 and HTTP/1.1 protocols
+                .enableWireLogging("wire-log-before-ssl-handler", LogLevel.INFO, () -> true)
+                .protocols(h2().enableFrameLogging("h2-frame-log", LogLevel.INFO, () -> true).build(), h1Default()) // Configure support for HTTP/2 and HTTP/1.1 protocols
                 .sslConfig(new ClientSslConfigBuilder(DefaultTestCerts::loadServerCAPem).build())
                 .buildBlocking()) {
             HttpResponse response = client.request(client.get("/"));
