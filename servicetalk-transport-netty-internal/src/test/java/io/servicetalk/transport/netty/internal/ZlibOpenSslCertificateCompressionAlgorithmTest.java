@@ -22,6 +22,8 @@ import io.netty.handler.ssl.OpenSslCertificateCompressionAlgorithm;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.Timeout.ThreadMode;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -30,6 +32,7 @@ import java.util.Arrays;
 import java.util.zip.Deflater;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 // SEPARATE_THREAD is required so the timeout can preempt a hang inside the non-interruptible
@@ -49,6 +52,20 @@ class ZlibOpenSslCertificateCompressionAlgorithmTest {
         byte[] uncompressedCert = algorithm.decompress(null, originalCert.length, compressedCert);
 
         assertArrayEquals(originalCert, uncompressedCert);
+    }
+
+    @ParameterizedTest(name = "{displayName} [{index}]: uncompressedLength={0}")
+    @ValueSource(ints = {2_145_338_297, Integer.MAX_VALUE})
+    void bufferSizeEstimateIsCappedForHugeCertificates(int uncompressedLength) {
+        // Scaling by 1.001 and adding 12 overflows int at these lengths, producing a negative array size.
+        assertEquals(Integer.MAX_VALUE,
+                ZlibOpenSslCertificateCompressionAlgorithm.bufferSizeEstimate(uncompressedLength));
+    }
+
+    @Test
+    void bufferSizeEstimateForTypicalCertificates() {
+        assertEquals(14, ZlibOpenSslCertificateCompressionAlgorithm.bufferSizeEstimate(1));
+        assertEquals(1013, ZlibOpenSslCertificateCompressionAlgorithm.bufferSizeEstimate(1000));
     }
 
     private static byte[] inputStreamToArray(final InputStream inputStream) throws Exception {

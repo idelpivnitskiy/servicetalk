@@ -52,7 +52,7 @@ final class ZlibOpenSslCertificateCompressionAlgorithm implements OpenSslCertifi
 
             // This calculation (which is also used inside Netty) comes from the C library which describes it as:
             // "...must be at least 0.1% larger than the uncompressed length plus 12 bytes..."
-            int bufferSizeEstimate = (int) Math.ceil(uncompressedLength * 1.001) + 12;
+            int bufferSizeEstimate = bufferSizeEstimate(uncompressedLength);
 
             byte[] compressionBuffer = new byte[bufferSizeEstimate];
             while (!deflater.finished()) {
@@ -123,5 +123,18 @@ final class ZlibOpenSslCertificateCompressionAlgorithm implements OpenSslCertifi
     @Override
     public int algorithmId() {
         return CertificateCompressionAlgorithms.ZLIB_ALGORITHM_ID;
+    }
+
+    /**
+     * Size of the buffer that ZLIB requires to deflate a certificate of the given length.
+     * <p>
+     * Visible for testing: the {@code + 12} overflows int once the scaled length reaches
+     * {@link Integer#MAX_VALUE}, which would yield a negative array size.
+     *
+     * @param uncompressedLength length of the certificate to compress.
+     * @return size of the deflate buffer, capped at {@link Integer#MAX_VALUE}.
+     */
+    static int bufferSizeEstimate(final int uncompressedLength) {
+        return (int) Math.min(Integer.MAX_VALUE, Math.ceil(uncompressedLength * 1.001) + 12);
     }
 }
