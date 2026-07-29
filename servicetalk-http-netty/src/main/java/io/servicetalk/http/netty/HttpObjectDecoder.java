@@ -174,7 +174,11 @@ abstract class HttpObjectDecoder<T extends HttpMetaData> extends ByteToMessageDe
      * Line being parsed. Used for reporting location in exceptions
      */
     private int parsingLine;
-    private int currentHeadersBlockLength;
+    /**
+     * Running total of the header block being parsed, compared against {@link #maxTotalHeaderFieldsLength}. Held as a
+     * long so the accumulation cannot overflow and slip past the limit check.
+     */
+    private long currentHeadersBlockLength;
 
     /**
      * The internal state of {@link HttpObjectDecoder}.
