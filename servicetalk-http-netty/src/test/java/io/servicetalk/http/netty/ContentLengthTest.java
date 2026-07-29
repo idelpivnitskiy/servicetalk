@@ -62,6 +62,8 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.instanceOf;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ContentLengthTest {
 
@@ -201,6 +203,29 @@ class ContentLengthTest {
 
     private static StreamingHttpRequest newStreamingRequest(HttpRequestMethod method) {
         return newRequest(method, "/", HTTP_1_1, headersFactory.newHeaders(), DEFAULT_ALLOCATOR, headersFactory);
+    }
+
+    @Test
+    void shouldCalculateRequestContentLengthLargerThanIntMaxValue() throws Exception {
+        // Mocked buffers report their size without allocating it, so the aggregate exceeds Integer.MAX_VALUE.
+        StreamingHttpRequest request = newAggregatedRequest().payloadBody("Hello", textSerializerUtf8())
+                .toStreamingRequest().transformMessageBody(payload -> payload.map(obj -> (Buffer) obj)
+                        .concat(from(bufferOfSize(1_500_000_000), bufferOfSize(1_500_000_000))));
+        setRequestContentLengthAndVerify(request, contentEqualTo("3000000005"));
+    }
+
+    @Test
+    void shouldCalculateResponseContentLengthLargerThanIntMaxValue() throws Exception {
+        StreamingHttpResponse response = newAggregatedResponse().payloadBody("Hello", textSerializerUtf8())
+                .toStreamingResponse().transformMessageBody(payload -> payload.map(obj -> (Buffer) obj)
+                        .concat(from(bufferOfSize(2_000_000_000), bufferOfSize(2_000_000_000))));
+        setResponseContentLengthAndVerify(response, contentEqualTo("4000000005"));
+    }
+
+    private static Buffer bufferOfSize(int readableBytes) {
+        Buffer buffer = mock(Buffer.class);
+        when(buffer.readableBytes()).thenReturn(readableBytes);
+        return buffer;
     }
 
     private static HttpResponse newAggregatedResponse() throws Exception {

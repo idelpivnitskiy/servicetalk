@@ -34,6 +34,7 @@ import io.netty.util.AsciiString;
 
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.function.ObjLongConsumer;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -188,15 +189,15 @@ final class HeaderUtils {
                 /* propagateCancel */ true);
     }
 
-    private static void updateRequestContentLengthNonZero(final int contentLength, final HttpHeaders headers) {
+    private static void updateRequestContentLengthNonZero(final HttpHeaders headers, final long contentLength) {
         if (contentLength > 0) {
-            headers.set(CONTENT_LENGTH, Integer.toString(contentLength));
+            headers.set(CONTENT_LENGTH, Long.toString(contentLength));
         }
     }
 
-    private static void updateContentLength(final int contentLength, final HttpHeaders headers) {
+    private static void updateContentLength(final HttpHeaders headers, final long contentLength) {
         assert contentLength >= 0;
-        headers.set(CONTENT_LENGTH, contentLength == 0 ? ZERO : Integer.toString(contentLength));
+        headers.set(CONTENT_LENGTH, contentLength == 0 ? ZERO : Long.toString(contentLength));
     }
 
     static boolean shouldAddZeroContentLength(final HttpRequestMethod requestMethod) {
@@ -286,16 +287,16 @@ final class HeaderUtils {
 
     private static final class ContentLengthList<T> extends ArrayList<T> {
         private static final long serialVersionUID = -6593491776432933503L;
-        int contentLength;
+        long contentLength;
 
-        ContentLengthList(int contentLength, int arraySize) {
+        ContentLengthList(long contentLength, int arraySize) {
             super(arraySize);
             this.contentLength = contentLength;
         }
 
         @Override
         public int hashCode() {
-            return 31 * contentLength + super.hashCode();
+            return 31 * Long.hashCode(contentLength) + super.hashCode();
         }
 
         @Override
@@ -308,11 +309,11 @@ final class HeaderUtils {
     @SuppressWarnings("PMD.LooseCoupling") // internal ContentLengthList is required to access its contentLength field
     private static Publisher<Object> setContentLength(final HttpMetaData metadata,
                                                       final Publisher<Object> messageBody,
-                                                      final BiIntConsumer<HttpHeaders> contentLengthUpdater,
+                                                      final ObjLongConsumer<HttpHeaders> contentLengthUpdater,
                                                       final HttpProtocolVersion protocolVersion,
                                                       final boolean propagateCancel) {
         if (emptyMessageBody(metadata, messageBody)) {
-            contentLengthUpdater.apply(0, metadata.headers());
+            contentLengthUpdater.accept(metadata.headers(), 0);
             return flatEmptyMessage(protocolVersion, metadata, messageBody, propagateCancel);
         }
         return messageBody.collect(() -> null, (reduction, item) -> {
@@ -338,7 +339,7 @@ final class HeaderUtils {
             items.add(item);
             return items;
         }).flatMapPublisher(reduction -> {
-            int contentLength = 0;
+            long contentLength = 0;
             final Publisher<Object> flatRequest;
             // We will insert content-length header but haven't yet because we need to compute the value. So no need
             // to pass headers to determine if trailers should be appended.
@@ -367,7 +368,7 @@ final class HeaderUtils {
             } else {
                 throw new IllegalArgumentException("unsupported payload chunk type: " + reduction);
             }
-            contentLengthUpdater.apply(contentLength, metadata.headers());
+            contentLengthUpdater.accept(metadata.headers(), contentLength);
             return flatRequest;
         });
     }
@@ -494,21 +495,5 @@ final class HeaderUtils {
             allClValues = sb;
         }
         return new IllegalArgumentException("Multiple content-length values found: " + allClValues);
-    }
-
-    /**
-     * A special consumer that takes an {@code int} and a custom argument and returns the result.
-     *
-     * @param <T> The other argument to this function.
-     */
-    @FunctionalInterface
-    private interface BiIntConsumer<T> {
-        /**
-         * Evaluates this consumer on the given arguments.
-         *
-         * @param i The {@code int} argument.
-         * @param t The {@link T} argument.
-         */
-        void apply(int i, T t);
     }
 }
