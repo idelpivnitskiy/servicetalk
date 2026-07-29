@@ -153,7 +153,7 @@ public final class GrpcStatusUtils {
      * @return the encoded message.
      */
     private static CharSequence encodeMessage(byte[] msgBytes, int ri) {
-        byte[] escapedBytes = new byte[ri + (msgBytes.length - ri) * 3];
+        byte[] escapedBytes = new byte[escapedLength(msgBytes.length, ri)];
         // copy over the good bytes
         if (ri != 0) {
             System.arraycopy(msgBytes, 0, escapedBytes, 0, ri);
@@ -172,5 +172,24 @@ public final class GrpcStatusUtils {
             escapedBytes[wi++] = b;
         }
         return new String(escapedBytes, 0, wi, StandardCharsets.ISO_8859_1);
+    }
+
+    /**
+     * Worst-case size of the percent-encoded form, where every byte from {@code ri} onwards expands to 3 bytes.
+     * <p>
+     * Visible for testing: computing this in {@code int} overflows for messages over ~715MB, which would yield a
+     * negative array size.
+     *
+     * @param msgLength the length of the message to encode.
+     * @param ri the index of the first byte that requires escaping.
+     * @return the size of the buffer required to hold the encoded message.
+     */
+    static int escapedLength(final int msgLength, final int ri) {
+        final long escapedLength = ri + (msgLength - ri) * 3L;
+        if (escapedLength > Integer.MAX_VALUE) {
+            throw new IllegalArgumentException("Status message of " + msgLength +
+                    " bytes is too long to percent-encode, requires " + escapedLength + " bytes");
+        }
+        return (int) escapedLength;
     }
 }

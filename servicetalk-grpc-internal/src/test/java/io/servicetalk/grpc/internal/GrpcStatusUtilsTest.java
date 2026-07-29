@@ -22,11 +22,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 final class GrpcStatusUtilsTest {
 
@@ -79,6 +81,21 @@ final class GrpcStatusUtilsTest {
 
         headers.set(GrpcStatusUtils.GRPC_STATUS_MESSAGE, "%7E%z0%7e");
         assertEquals("~%z0~", GrpcStatusUtils.getStatusMessage(headers));
+    }
+
+    @Test
+    void escapedLengthComputesWorstCaseSize() {
+        assertEquals(0, GrpcStatusUtils.escapedLength(0, 0));
+        assertEquals(30, GrpcStatusUtils.escapedLength(10, 0));
+        assertEquals(22, GrpcStatusUtils.escapedLength(10, 4));
+    }
+
+    @ParameterizedTest(name = "{displayName} [{index}]: msgLength={0}")
+    @ValueSource(ints = {715_827_883, 1_000_000_000, Integer.MAX_VALUE})
+    void escapedLengthRejectsMessagesTooLongToEncode(int msgLength) {
+        // Computed as an int these wrap to a negative size, or (for Integer.MAX_VALUE) to a positive size that is
+        // too small for the encoded form.
+        assertThrows(IllegalArgumentException.class, () -> GrpcStatusUtils.escapedLength(msgLength, 0));
     }
 
     static Stream<Arguments> messageSamples() {
