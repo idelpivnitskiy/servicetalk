@@ -323,7 +323,16 @@ class HttpAttributesGetterTest {
                 Arguments.of("::", null),
                 Arguments.of("foo:", null),
                 Arguments.of(":1foo", null),
-                Arguments.of("[2001:db8::1", null)
+                Arguments.of("[2001:db8::1", null),
+                // Ports above the valid range, including values that wrap into a plausible port when narrowed to int
+                Arguments.of("foo:65536", null),
+                Arguments.of("foo:4294967376", null),          // wraps to 80
+                Arguments.of("foo:4294967739", null),          // wraps to 443
+                Arguments.of("[2001:db8::1]:4294967376", null),
+                // Highest valid port still parses
+                Arguments.of("foo:65535", HostAndPort.of("foo", 65535)),
+                // A negative port keeps being reported as "no port"
+                Arguments.of("foo:-5", HostAndPort.of("foo", -1))
         );
     }
 

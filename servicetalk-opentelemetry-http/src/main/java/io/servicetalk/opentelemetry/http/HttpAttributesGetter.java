@@ -50,6 +50,7 @@ abstract class HttpAttributesGetter
     private static final CharSequence AUTHORITY = CharSequences.newAsciiString(":authority");
     private static final Integer PORT_80 = 80;
     private static final Integer PORT_443 = 443;
+    private static final int MAX_PORT = 65_535;
 
     static final HttpClientAttributesGetter<RequestInfo, HttpResponseMetaData>
             CLIENT_INSTANCE = new ClientGetter();
@@ -374,8 +375,14 @@ abstract class HttpAttributesGetter
         } else {
             host = authority.subSequence(0, colonPosition);
             try {
-                port = Math.max(-1,
-                        (int) CharSequences.parseLong(authority.subSequence(colonPosition + 1, authority.length())));
+                // Parse as a long: narrowing first would wrap an out-of-range value into a plausible port number.
+                final long parsedPort =
+                        CharSequences.parseLong(authority.subSequence(colonPosition + 1, authority.length()));
+                if (parsedPort > MAX_PORT) {
+                    // out of range port, give up.
+                    return null;
+                }
+                port = (int) Math.max(-1, parsedPort);
             } catch (IllegalArgumentException ex) {
                 // malformed port, give up.
                 return null;
