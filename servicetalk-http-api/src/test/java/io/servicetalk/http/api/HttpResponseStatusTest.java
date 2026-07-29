@@ -19,6 +19,8 @@ import io.servicetalk.buffer.api.Buffer;
 import io.servicetalk.buffer.netty.BufferAllocators;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static io.servicetalk.buffer.api.ReadOnlyBufferAllocators.DEFAULT_RO_ALLOCATOR;
 import static io.servicetalk.http.api.HttpResponseStatus.NO_CONTENT;
@@ -81,5 +83,21 @@ class HttpResponseStatusTest {
     @Test
     void test4DigitStatusCodeIsNotAllowed() {
         assertThrows(IllegalArgumentException.class, () -> HttpResponseStatus.of(1000, "My Own Status Code"));
+    }
+
+    @Test
+    void testCharSequenceStatusCode() {
+        assertSame(OK, of("200"));
+        assertEquals(590, of("590").code());
+        assertThrows(IllegalArgumentException.class, () -> of("99"));
+        assertThrows(IllegalArgumentException.class, () -> of("1000"));
+    }
+
+    @ParameterizedTest(name = "{displayName} [{index}] statusCode={0}")
+    @ValueSource(strings = {"4294967496", "4294967796", "8589934792", "-4294967096"})
+    void testStatusCodeOutsideIntRangeIsNotAllowed(String statusCode) {
+        // Each of these narrows to a valid-looking 3-digit code (200, 500, 200, 200), which would otherwise slip
+        // past the [100-999] validation.
+        assertThrows(IllegalArgumentException.class, () -> of(statusCode));
     }
 }

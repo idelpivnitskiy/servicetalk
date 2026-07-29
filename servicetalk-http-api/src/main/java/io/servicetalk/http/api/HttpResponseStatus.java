@@ -509,7 +509,13 @@ public final class HttpResponseStatus {
      * @return a {@link HttpResponseStatus} representation of {@code statusCode}.
      */
     public static HttpResponseStatus of(final CharSequence statusCode) {
-        int statusCodeInt = (int) parseLong(statusCode);
+        final long statusCodeLong = parseLong(statusCode);
+        final int statusCodeInt = (int) statusCodeLong;
+        // Narrowing a value outside the int range wraps it into a valid-looking status code, which would bypass the
+        // [100-999] validation performed by StatusClass#fromStatusCode below.
+        if (statusCodeInt != statusCodeLong) {
+            throw new IllegalArgumentException("Illegal status code: " + statusCodeLong + ", expected [100-999]");
+        }
         final HttpResponseStatus cached = valueOf(statusCodeInt);
         return cached != null ? cached : new HttpResponseStatus(statusCodeInt, "unknown");
     }
